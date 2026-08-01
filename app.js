@@ -943,6 +943,237 @@ function openFishPlan() {
 
 document.getElementById("fishPlanOpen").onclick = openFishPlan;
 
+
+// -----------------------------------------------------
+// ПОГОДА ДЛЯ АКТИВНОЇ ВОДОЙМИ
+// -----------------------------------------------------
+
+let lastWeatherData = null;
+
+function weatherDescription(code) {
+    const c = Number(code);
+
+    if (c === 0) return "☀️ Ясно";
+    if ([1, 2, 3].includes(c)) return "⛅ Хмарність";
+    if ([45, 48].includes(c)) return "🌫️ Туман";
+    if ([51, 53, 55, 56, 57].includes(c)) return "🌦️ Мряка";
+    if ([61, 63, 65, 66, 67].includes(c)) return "🌧️ Дощ";
+    if ([71, 73, 75, 77].includes(c)) return "🌨️ Сніг";
+    if ([80, 81, 82].includes(c)) return "🌧️ Зливи";
+    if ([95, 96, 99].includes(c)) return "⛈️ Гроза";
+
+    return "🌤️ Змішані умови";
+}
+
+function fishingWeatherScore(current, hourly) {
+    let score = 50;
+
+    const temp = Number(current.temperature_2m);
+    const pressure = Number(current.pressure_msl);
+    const wind = Number(current.wind_speed_10m);
+    const rain = Number(current.precipitation);
+
+    // Це орієнтовний індекс, а не прогноз кльову.
+    if (temp >= 12 && temp <= 26) score += 12;
+    if (wind >= 5 && wind <= 22) score += 8;
+    if (wind > 35) score -= 12;
+    if (rain > 0 && rain <= 3) score += 3;
+
+    // Тренд тиску за найближчі ~6 годин.
+    if (hourly && hourly.pressure_msl && hourly.pressure_msl.length > 6) {
+        const p0 = Number(hourly.pressure_msl[0]);
+        const p6 = Number(hourly.pressure_msl[6]);
+        const change = p6 - p0;
+
+        if (Math.abs(change) <= 2) score += 7;
+        else if (Math.abs(change) >= 7) score -= 5;
+    }
+
+    // Нормалізуємо.
+    return Math.max(0, Math.min(100, Math.round(score)));
+}
+
+function weatherAdvice(score, current) {
+    const wind = Number(current.wind_speed_10m);
+    const rain = Number(current.precipitation);
+
+    if (wind > 35) {
+        return "⚠️ Сильний вітер. Перевір точність закидання та не роби висновок про кльов лише за погодою.";
+    }
+
+    if (rain > 3) {
+        return "🌧️ Помітні опади. Варто перевірити захищену точку та не перевантажувати флет кормом.";
+    }
+
+    if (score >= 75) {
+        return "🔥 Умови виглядають сприятливо за цим простим індексом. Порівняй мілку та глибшу точку.";
+    }
+
+    if (score >= 60) {
+        return "🎯 Нормальні умови. Має сенс почати з точки з вираженою бровкою.";
+    }
+
+    return "🟡 Умови неоднозначні. Краще мати запасну точку та перевіряти рибу на різних горизонтах.";
+}
+
+async function loadWeather() {
+    const panel = document.getElementById("weatherPanel");
+    const water = currentWater();
+
+    if (!water) return;
+
+    panel.innerHTML = `
+        <b>🌦️ Погода — ${escapeHtml(water.name)}</b>
+        <p>Завантаження...</p>
+    `;
+    panel.classList.remove("hidden");
+
+    const lat = Number(water.lat);
+    const lon = Number(water.lng);
+
+    const params = new URLSearchParams({
+        latitude: lat,
+        longitude: lon,
+        timezone: "auto",
+        forecast_days: "2",
+        current: [
+            "temperature_2m",
+            "relative_humidity_2m",
+            "apparent_temperature",
+            "precipitation",
+            "weather_code",
+            "pressure_msl",
+            "wind_speed_10m",
+            "wind_direction_10m",
+            "wind_gusts_10m"
+        ].join(","),
+        hourly: [
+            "temperature_2m",
+            "precipitation_probability",
+            "precipitation",
+            "pressure_msl",
+            "wind_speed_10m",
+            "weather_code"
+        ].join(",")
+    });
+
+    try {
+        const response = await fetch(
+            `https://api.open-meteo.com/v1/forecast?${params.toString()}`
+        );
+
+        if (!response.ok) {
+            throw new Error("HTTP " + response.status);
+        }
+
+        const data = await response.json();
+        lastWeatherData = data;
+
+        const current = data.current;
+        const hourly = data.hourly;
+        const score = fishingWeatherScore(current, hourly);
+
+        const rows = [];
+
+        for (let i = 0; i < Math.min(8, hourly.time.length); i++) {
+            const time = new Date(hourly.time[i]);
+
+            rows.push(`
+                <div class="weather-hour">
+                    <b>${time.toLocaleTimeString("uk-UA", {
+                        hour: "2-digit",
+                        minute: "2-digit"
+                    })}</b>
+                    —
+                    ${Number(hourly.temperature_2m[i]).toFixed(0)}°C,
+                    ${weatherDescription(hourly.weather_code[i])},
+                    вітер ${Number(hourly.wind_speed_10m[i]).toFixed(0)} км/год
+                </div>
+            `);
+        }
+
+        panel.innerHTML = `
+            <b>🌦️ Погода — ${escapeHtml(water.name)}</b>
+
+            <div class="weather-grid">
+                <div class="weather-item">
+                    <b>${Number(current.temperature_2m).toFixed(1)}°C</b>
+                    <small>температура</small>
+                </div>
+
+                <div class="weather-item">
+                    <b>${Number(current.apparent_temperature).toFixed(1)}°C</b>
+                    <small>відчувається</small>
+                </div>
+
+                <div class="weather-item">
+                    <b>${Number(current.pressure_msl).toFixed(0)} hPa</b>
+                    <small>тиск</small>
+                </div>
+
+                <div class="weather-item">
+                    <b>${Number(current.relative_humidity_2m).toFixed(0)}%</b>
+                    <small>вологість</small>
+                </div>
+
+                <div class="weather-item">
+                    <b>${Number(current.wind_speed_10m).toFixed(0)} км/год</b>
+                    <small>вітер</small>
+                </div>
+
+                <div class="weather-item">
+                    <b>${Number(current.wind_gusts_10m).toFixed(0)} км/год</b>
+                    <small>пориви</small>
+                </div>
+
+                <div class="weather-item">
+                    <b>${Number(current.precipitation).toFixed(1)} мм</b>
+                    <small>опади</small>
+                </div>
+
+                <div class="weather-item">
+                    <b>${weatherDescription(current.weather_code)}</b>
+                    <small>стан</small>
+                </div>
+            </div>
+
+            <div class="weather-advice">
+                <b>🎣 Орієнтовний погодний індекс: ${score}/100</b><br>
+                ${weatherAdvice(score, current)}
+                <br><br>
+                <small>
+                    Індекс є допоміжною оцінкою умов, а не гарантією кльову.
+                </small>
+            </div>
+
+            <b>⏱️ Найближчі години</b>
+            ${rows.join("")}
+
+            <button id="weatherRefresh">🔄 Оновити</button>
+            <button id="weatherClose">Закрити</button>
+        `;
+
+        document.getElementById("weatherRefresh").onclick = loadWeather;
+        document.getElementById("weatherClose").onclick =
+            () => panel.classList.add("hidden");
+
+    } catch (error) {
+        panel.innerHTML = `
+            <b>🌦️ Погода</b>
+            <p>❌ Не вдалося завантажити погоду.</p>
+            <small>${escapeHtml(error.message)}</small>
+            <button id="weatherRetry">🔄 Спробувати ще раз</button>
+            <button id="weatherClose">Закрити</button>
+        `;
+
+        document.getElementById("weatherRetry").onclick = loadWeather;
+        document.getElementById("weatherClose").onclick =
+            () => panel.classList.add("hidden");
+    }
+}
+
+document.getElementById("weatherOpen").onclick = loadWeather;
+
 // -----------------------------------------------------
 // ДОПОМІЖНЕ
 // -----------------------------------------------------

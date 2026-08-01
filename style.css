@@ -288,3 +288,64 @@ html, body {
         top: 115px;
     }
 }
+
+.weather-panel {
+    left: 12px;
+    bottom: 55px;
+    width: 350px;
+    max-height: 70vh;
+    overflow-y: auto;
+}
+
+.weather-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 7px;
+    margin-top: 10px;
+}
+
+.weather-item {
+    background: #f2f5f8;
+    border-radius: 8px;
+    padding: 8px;
+}
+
+.weather-item b {
+    display: block;
+}
+
+.weather-item small {
+    color: #666;
+}
+
+.weather-advice {
+    margin-top: 10px;
+    padding: 10px;
+    border-radius: 9px;
+    background: #eef6ff;
+    line-height: 1.45;
+}
+
+.weather-hour {
+    border-top: 1px solid #ddd;
+    padding: 7px 0;
+    font-size: 13px;
+}
+
+.weather-panel button {
+    width: 100%;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 9px;
+    margin-top: 8px;
+    background: white;
+    cursor: pointer;
+}
+
+@media (max-width: 650px) {
+    .weather-panel {
+        left: 12px;
+        right: 12px;
+        width: auto;
+    }
+}
