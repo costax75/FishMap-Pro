@@ -27,7 +27,492 @@ const STORAGE_KEY = "fishmappro_points";
 let points = [];
 let addMode = false;
 
+// =====================================================
+// FISHMAP PRO — МОЇ ВОДОЙМИ
+// =====================================================
 
+const WATERS_KEY = "fishmappro_waters";
+const CURRENT_WATER_KEY = "fishmappro_current_water";
+
+let waters = [];
+let currentWaterId = null;
+
+
+// Завантаження водойм
+function loadWaters() {
+
+    const saved = localStorage.getItem(WATERS_KEY);
+
+    if (saved) {
+        try {
+            waters = JSON.parse(saved);
+        } catch (e) {
+            waters = [];
+        }
+    }
+
+    // Якщо водойм ще немає — створюємо першу
+    if (waters.length === 0) {
+
+        waters.push({
+            id: Date.now(),
+            name: "Криничанський ставок",
+            lat: 48.460,
+            lng: 34.980
+        });
+
+        saveWaters();
+    }
+
+    const savedCurrent =
+        localStorage.getItem(CURRENT_WATER_KEY);
+
+    if (savedCurrent) {
+        currentWaterId = Number(savedCurrent);
+    }
+
+    if (!waters.some(w => w.id === currentWaterId)) {
+        currentWaterId = waters[0].id;
+    }
+
+    localStorage.setItem(
+        CURRENT_WATER_KEY,
+        currentWaterId
+    );
+}
+
+
+// Збереження водойм
+function saveWaters() {
+
+    localStorage.setItem(
+        WATERS_KEY,
+        JSON.stringify(waters)
+    );
+
+}
+
+
+// Поточна водойма
+function getCurrentWater() {
+
+    return waters.find(
+        w => w.id === currentWaterId
+    );
+
+}
+
+
+// =====================================================
+// ПАНЕЛЬ "МОЇ ВОДОЙМИ"
+// =====================================================
+
+function createWatersPanel() {
+
+    const panel =
+        document.createElement("div");
+
+    panel.id = "fishmap-waters-panel";
+
+    panel.innerHTML = `
+
+        <div class="waters-title">
+            🎣 <b>FishMap Pro</b>
+        </div>
+
+        <button id="watersOpen">
+            🗺️ Мої водойми
+        </button>
+
+        <div id="watersList" style="display:none">
+
+            <div class="waters-header">
+                <b>Мої водойми</b>
+
+                <button id="addWater">
+                    ＋
+                </button>
+            </div>
+
+            <div id="watersItems"></div>
+
+        </div>
+    `;
+
+    document.body.appendChild(panel);
+
+
+    document.getElementById(
+        "watersOpen"
+    ).onclick = function() {
+
+        const list =
+            document.getElementById("watersList");
+
+        list.style.display =
+            list.style.display === "none"
+                ? "block"
+                : "none";
+
+        renderWaters();
+
+    };
+
+
+    document.getElementById(
+        "addWater"
+    ).onclick = addWater;
+
+}
+
+
+// =====================================================
+// ДОДАТИ ВОДОЙМУ
+// =====================================================
+
+function addWater() {
+
+    const name =
+        prompt(
+            "🏞 Назва водойми:",
+            "Нова водойма"
+        );
+
+    if (!name) return;
+
+
+    const water = {
+
+        id: Date.now(),
+
+        name: name,
+
+        lat: map.getCenter().lat,
+
+        lng: map.getCenter().lng
+
+    };
+
+
+    waters.push(water);
+
+    saveWaters();
+
+
+    currentWaterId =
+        water.id;
+
+    localStorage.setItem(
+        CURRENT_WATER_KEY,
+        currentWaterId
+    );
+
+
+    renderWaters();
+
+
+    map.setView(
+        [
+            water.lat,
+            water.lng
+        ],
+        14
+    );
+
+}
+
+
+// =====================================================
+// ВІДОБРАЖЕННЯ ВОДОЙМ
+// =====================================================
+
+function renderWaters() {
+
+    const container =
+        document.getElementById(
+            "watersItems"
+        );
+
+    if (!container) return;
+
+
+    container.innerHTML = "";
+
+
+    waters.forEach(function(water) {
+
+        const count =
+            points.filter(
+                p => p.waterId === water.id
+            ).length;
+
+
+        const item =
+            document.createElement("div");
+
+        item.className =
+            "water-item";
+
+
+        if (water.id === currentWaterId) {
+            item.classList.add(
+                "water-selected"
+            );
+        }
+
+
+        item.innerHTML = `
+
+            <div class="water-name">
+                🏞️ ${water.name}
+            </div>
+
+            <div class="water-info">
+                📍 ${water.lat.toFixed(5)},
+                ${water.lng.toFixed(5)}
+                <br>
+                📌 Промірів: ${count}
+            </div>
+
+            <button class="water-select">
+                ${water.id === currentWaterId
+                    ? "✓ Відкрита"
+                    : "Відкрити"}
+            </button>
+
+        `;
+
+
+        item.querySelector(
+            ".water-select"
+        ).onclick = function() {
+
+            selectWater(water.id);
+
+        };
+
+
+        container.appendChild(item);
+
+    });
+
+}
+
+
+// =====================================================
+// ВИБІР ВОДОЙМИ
+// =====================================================
+
+function selectWater(id) {
+
+    currentWaterId = id;
+
+
+    localStorage.setItem(
+        CURRENT_WATER_KEY,
+        id
+    );
+
+
+    const water =
+        getCurrentWater();
+
+
+    if (!water) return;
+
+
+    map.setView(
+        [
+            water.lat,
+            water.lng
+        ],
+        14
+    );
+
+
+    // Показуємо тільки точки цієї водойми
+    points = points.filter(function(point) {
+
+        return point.waterId === currentWaterId;
+
+    });
+
+
+    drawPoints();
+
+    drawRelief();
+
+    renderWaters();
+
+}
+
+
+// =====================================================
+// СТИЛІ
+// =====================================================
+
+const watersStyle =
+    document.createElement("style");
+
+watersStyle.innerHTML = `
+
+#fishmap-waters-panel {
+
+    position: fixed;
+
+    top: 15px;
+
+    left: 15px;
+
+    z-index: 10000;
+
+    width: 240px;
+
+    background: white;
+
+    border-radius: 12px;
+
+    padding: 10px;
+
+    box-shadow:
+        0 3px 15px
+        rgba(0,0,0,.3);
+
+    font-family: Arial, sans-serif;
+
+}
+
+
+.waters-title {
+
+    font-size: 17px;
+
+    margin-bottom: 8px;
+
+}
+
+
+#watersOpen {
+
+    width: 100%;
+
+    padding: 9px;
+
+    border: 0;
+
+    border-radius: 8px;
+
+    background: #1976d2;
+
+    color: white;
+
+    font-size: 14px;
+
+}
+
+
+.waters-header {
+
+    display: flex;
+
+    justify-content: space-between;
+
+    align-items: center;
+
+    margin-top: 10px;
+
+    margin-bottom: 8px;
+
+}
+
+
+#addWater {
+
+    width: 30px;
+
+    height: 30px;
+
+    border: 0;
+
+    border-radius: 7px;
+
+    background: #2e7d32;
+
+    color: white;
+
+    font-size: 20px;
+
+}
+
+
+.water-item {
+
+    border: 1px solid #ddd;
+
+    border-radius: 8px;
+
+    padding: 8px;
+
+    margin-bottom: 7px;
+
+}
+
+
+.water-selected {
+
+    border: 2px solid #1976d2;
+
+}
+
+
+.water-name {
+
+    font-weight: bold;
+
+    margin-bottom: 4px;
+
+}
+
+
+.water-info {
+
+    font-size: 11px;
+
+    color: #666;
+
+    margin-bottom: 6px;
+
+}
+
+
+.water-select {
+
+    width: 100%;
+
+    padding: 6px;
+
+    border: 0;
+
+    border-radius: 6px;
+
+    background: #eee;
+
+}
+
+`;
+
+document.head.appendChild(
+    watersStyle
+);
+
+
+// =====================================================
+// ЗАПУСК ВОДОЙМ
+// =====================================================
+
+loadWaters();
+
+createWatersPanel();
 // =====================================================
 // ОКРЕМИЙ ШАР ДЛЯ РЕЛЬЄФУ
 // =====================================================
