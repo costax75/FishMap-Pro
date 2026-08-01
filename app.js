@@ -486,7 +486,7 @@ function drawContourLevel(
             }
 
 
- switch (code) {
+            switch (code) {
 
     case 1:
     case 14:
