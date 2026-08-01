@@ -684,6 +684,103 @@ function showPointAnalysis(id) {
         () => card.classList.add("hidden");
 }
 
+
+// -----------------------------------------------------
+// АВТОПОШУК НАЙПЕРСПЕКТИВНІШИХ ТОЧОК ДЛЯ ФЛЕТУ
+// -----------------------------------------------------
+
+function flatPointScore(point) {
+    const result = analyzePoint(point);
+    const depth = Number(point.depth);
+    let score = result.score;
+
+    if (depth >= 2 && depth <= 6) score += 8;
+    if (depth >= 6 && depth <= 10) score += 4;
+
+    if (result.maxDiff >= 2) score += 12;
+    else if (result.maxDiff >= 1) score += 6;
+
+    if (depth < 0.8) score -= 15;
+
+    return Math.max(0, Math.min(100, Math.round(score)));
+}
+
+function getBestFlatPoints() {
+    return points
+        .filter(p => Number.isFinite(Number(p.depth)))
+        .map(point => ({
+            point,
+            score: flatPointScore(point)
+        }))
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 5);
+}
+
+function showBestFlatPoints() {
+    const card = document.getElementById("bestCard");
+
+    if (!points.length) {
+        card.innerHTML = `
+            <b>🎯 Найкраща точка для флету</b>
+            <p>Спочатку додай хоча б один промір глибини.</p>
+            <button class="action-button" id="closeBest">Закрити</button>
+        `;
+        card.classList.remove("hidden");
+        document.getElementById("closeBest").onclick =
+            () => card.classList.add("hidden");
+        return;
+    }
+
+    const best = getBestFlatPoints();
+
+    card.innerHTML = `
+        <b>🎯 Найперспективніші точки для флету</b>
+        <div class="card-sub">
+            Рейтинг враховує глибину, дно та перепади поруч.
+        </div>
+    `;
+
+    best.forEach((item, index) => {
+        const p = item.point;
+        const result = analyzePoint(p);
+        const div = document.createElement("div");
+
+        div.className = "best-item";
+        div.innerHTML = `
+            <b>№${index + 1} — ${item.score}/100</b><br>
+            🌊 ${Number(p.depth).toFixed(1)} м ·
+            🪨 ${escapeHtml(p.bottom || "—")}<br>
+            📐 Перепад поруч: ${result.maxDiff.toFixed(1)} м<br>
+            <small>${result.verdict}</small>
+            <button>📍 Перейти до точки</button>
+            <button>🎣 Аналіз</button>
+        `;
+
+        const buttons = div.querySelectorAll("button");
+
+        buttons[0].onclick = () => {
+            map.setView(
+                [Number(p.lat), Number(p.lng)],
+                Math.max(map.getZoom(), 15)
+            );
+        };
+
+        buttons[1].onclick = () => showPointAnalysis(p.id);
+
+        card.appendChild(div);
+    });
+
+    const close = document.createElement("button");
+    close.className = "action-button";
+    close.textContent = "Закрити";
+    close.onclick = () => card.classList.add("hidden");
+    card.appendChild(close);
+
+    card.classList.remove("hidden");
+}
+
+document.getElementById("findBest").onclick = showBestFlatPoints;
+
 // -----------------------------------------------------
 // ДОПОМІЖНЕ
 // -----------------------------------------------------

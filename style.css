@@ -221,3 +221,35 @@ html, body {
         bottom: 58px;
     }
 }
+
+.best-card {
+    left: 12px;
+    top: 115px;
+    width: 310px;
+    max-height: 65vh;
+    overflow-y: auto;
+}
+.best-item {
+    border: 1px solid #ddd;
+    border-radius: 9px;
+    padding: 9px;
+    margin-top: 8px;
+}
+.best-item b { font-size: 16px; }
+.best-item small { color: #666; }
+.best-item button {
+    width: 100%;
+    border: 0;
+    border-radius: 7px;
+    padding: 8px;
+    margin-top: 7px;
+    cursor: pointer;
+}
+@media (max-width: 650px) {
+    .best-card {
+        left: 12px;
+        right: 12px;
+        width: auto;
+        top: 115px;
+    }
+}
