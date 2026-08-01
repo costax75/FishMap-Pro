@@ -349,3 +349,71 @@ html, body {
         width: auto;
     }
 }
+
+.journal-panel {
+    right: 12px;
+    top: 135px;
+    width: 370px;
+    max-height: 75vh;
+    overflow-y: auto;
+}
+
+.journal-form input,
+.journal-form select,
+.journal-form textarea,
+.journal-panel button {
+    width: 100%;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 9px;
+    margin-top: 7px;
+    background: white;
+    font-family: inherit;
+}
+
+.journal-form textarea {
+    min-height: 70px;
+    resize: vertical;
+}
+
+.journal-entry {
+    border: 1px solid #ddd;
+    border-radius: 9px;
+    padding: 10px;
+    margin-top: 9px;
+}
+
+.journal-entry-title {
+    font-weight: 700;
+    margin-bottom: 5px;
+}
+
+.journal-entry small {
+    color: #666;
+}
+
+.journal-stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 7px;
+    margin-top: 10px;
+}
+
+.journal-stat {
+    background: #f2f5f8;
+    border-radius: 8px;
+    padding: 8px;
+}
+
+.journal-stat b {
+    display: block;
+}
+
+@media (max-width: 650px) {
+    .journal-panel {
+        left: 12px;
+        right: 12px;
+        width: auto;
+        top: 115px;
+    }
+}

@@ -1174,6 +1174,233 @@ async function loadWeather() {
 
 document.getElementById("weatherOpen").onclick = loadWeather;
 
+
+// -----------------------------------------------------
+// ЖУРНАЛ РИБАЛКИ
+// -----------------------------------------------------
+
+const JOURNAL_KEY = "fishmappro_journal_v1";
+let journalEntries = [];
+
+function loadJournal() {
+    try {
+        journalEntries = JSON.parse(
+            localStorage.getItem(JOURNAL_KEY) || "[]"
+        );
+    } catch {
+        journalEntries = [];
+    }
+
+    if (!Array.isArray(journalEntries)) journalEntries = [];
+}
+
+function saveJournal() {
+    localStorage.setItem(
+        JOURNAL_KEY,
+        JSON.stringify(journalEntries)
+    );
+}
+
+function journalDate(value) {
+    if (!value) return "—";
+
+    const d = new Date(value + "T12:00:00");
+
+    return d.toLocaleDateString("uk-UA", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric"
+    });
+}
+
+function openJournal() {
+    renderJournal();
+    document.getElementById("journalPanel")
+        .classList.remove("hidden");
+}
+
+function renderJournal() {
+    const panel = document.getElementById("journalPanel");
+    const water = currentWater();
+
+    const waterEntries = journalEntries.filter(
+        e => Number(e.waterId) === Number(currentWaterId)
+    );
+
+    const totalWeight = waterEntries.reduce(
+        (sum, e) => sum + (Number(e.weight) || 0),
+        0
+    );
+
+    const fishCount = waterEntries.reduce(
+        (sum, e) => sum + (Number(e.count) || 0),
+        0
+    );
+
+    panel.innerHTML = `
+        <b>📖 Журнал рибалки</b>
+
+        <div class="journal-stats">
+            <div class="journal-stat">
+                <b>${waterEntries.length}</b>
+                <small>виїздів</small>
+            </div>
+            <div class="journal-stat">
+                <b>${fishCount}</b>
+                <small>риб</small>
+            </div>
+            <div class="journal-stat">
+                <b>${totalWeight.toFixed(1)} кг</b>
+                <small>загальна вага</small>
+            </div>
+            <div class="journal-stat">
+                <b>${waterEntries.length
+                    ? (totalWeight / waterEntries.length).toFixed(1)
+                    : "0.0"} кг</b>
+                <small>середня вага/виїзд</small>
+            </div>
+        </div>
+
+        <div class="journal-form">
+            <input id="journalDate" type="date"
+                value="${new Date().toISOString().slice(0, 10)}">
+
+            <select id="journalPoint">
+                <option value="">Точка не вибрана</option>
+                ${points.map((p, i) => `
+                    <option value="${p.id}">
+                        Точка ${i + 1} — ${Number(p.depth).toFixed(1)} м
+                    </option>
+                `).join("")}
+            </select>
+
+            <select id="journalFish">
+                <option>Короп</option>
+                <option>Карась</option>
+                <option>Товстолоб</option>
+                <option>Плотва</option>
+                <option>Інша риба</option>
+            </select>
+
+            <input id="journalCount" type="number"
+                min="0" step="1" placeholder="Кількість риб">
+
+            <input id="journalWeight" type="number"
+                min="0" step="0.1" placeholder="Загальна вага, кг">
+
+            <input id="journalBait"
+                placeholder="Насадка / поп-ап / бойл">
+
+            <textarea id="journalNotes"
+                placeholder="Нотатки: погода, час, дистанція, корм..."></textarea>
+
+            <button id="journalAdd">➕ Зберегти результат</button>
+        </div>
+
+        <div id="journalEntries"></div>
+
+        <button id="journalClose">Закрити</button>
+    `;
+
+    const entriesBox = document.getElementById("journalEntries");
+
+    if (!waterEntries.length) {
+        entriesBox.innerHTML =
+            `<p>Поки немає записів для цієї водойми.</p>`;
+    } else {
+        waterEntries
+            .slice()
+            .reverse()
+            .forEach(entry => {
+                const div = document.createElement("div");
+                div.className = "journal-entry";
+
+                div.innerHTML = `
+                    <div class="journal-entry-title">
+                        🎣 ${escapeHtml(entry.fish)}
+                    </div>
+
+                    <small>
+                        ${journalDate(entry.date)}
+                        · ${Number(entry.count) || 0} риб
+                        · ${(Number(entry.weight) || 0).toFixed(1)} кг
+                    </small><br>
+
+                    🌊 Точка:
+                    ${entry.pointDepth
+                        ? Number(entry.pointDepth).toFixed(1) + " м"
+                        : "—"}<br>
+
+                    🟡 Насадка:
+                    ${escapeHtml(entry.bait || "—")}<br>
+
+                    📝 ${escapeHtml(entry.notes || "Без нотаток")}
+
+                    <button data-delete-journal="${entry.id}">
+                        🗑 Видалити
+                    </button>
+                `;
+
+                entriesBox.appendChild(div);
+            });
+    }
+
+    document.getElementById("journalAdd").onclick =
+        addJournalEntry;
+
+    document.getElementById("journalClose").onclick =
+        () => document.getElementById("journalPanel")
+            .classList.add("hidden");
+
+    entriesBox.querySelectorAll(
+        "[data-delete-journal]"
+    ).forEach(button => {
+        button.onclick = () => {
+            const id = Number(button.dataset.deleteJournal);
+
+            journalEntries = journalEntries.filter(
+                e => Number(e.id) !== id
+            );
+
+            saveJournal();
+            renderJournal();
+        };
+    });
+}
+
+function addJournalEntry() {
+    const pointId = Number(
+        document.getElementById("journalPoint").value
+    );
+
+    const point = points.find(
+        p => Number(p.id) === pointId
+    );
+
+    journalEntries.push({
+        id: Date.now() + Math.random(),
+        waterId: currentWaterId,
+        date: document.getElementById("journalDate").value,
+        fish: document.getElementById("journalFish").value,
+        count: Number(
+            document.getElementById("journalCount").value
+        ) || 0,
+        weight: Number(
+            document.getElementById("journalWeight").value
+        ) || 0,
+        bait: document.getElementById("journalBait").value,
+        notes: document.getElementById("journalNotes").value,
+        pointId: point ? point.id : null,
+        pointDepth: point ? Number(point.depth) : null
+    });
+
+    saveJournal();
+    renderJournal();
+}
+
+document.getElementById("journalOpen").onclick =
+    openJournal;
+
 // -----------------------------------------------------
 // ДОПОМІЖНЕ
 // -----------------------------------------------------
@@ -1193,6 +1420,7 @@ map.on("move zoom resize", drawRelief);
 // ЗАПУСК
 // -----------------------------------------------------
 
+loadJournal();
 loadAll();
 
 const water = currentWater();
