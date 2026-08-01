@@ -417,3 +417,78 @@ html, body {
         top: 115px;
     }
 }
+
+.backup-panel {
+    left: 12px;
+    top: 135px;
+    width: 340px;
+    max-height: 70vh;
+    overflow-y: auto;
+}
+
+.backup-panel button,
+.backup-panel input {
+    width: 100%;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 9px;
+    margin-top: 8px;
+    background: white;
+    cursor: pointer;
+}
+
+.backup-info {
+    background: #f2f5f8;
+    border-radius: 9px;
+    padding: 10px;
+    margin-top: 10px;
+    line-height: 1.45;
+}
+
+@media (max-width: 650px) {
+    .backup-panel {
+        left: 12px;
+        right: 12px;
+        width: auto;
+        top: 115px;
+    }
+}
+
+.cloud-panel {
+    right: 12px;
+    bottom: 55px;
+    width: 370px;
+    max-height: 75vh;
+    overflow-y: auto;
+}
+.cloud-panel input {
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 9px;
+    margin-top: 8px;
+}
+.cloud-panel button {
+    width: 100%;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 9px;
+    margin-top: 8px;
+    background: white;
+    cursor: pointer;
+}
+.cloud-status {
+    margin-top: 10px;
+    padding: 9px;
+    border-radius: 8px;
+    background: #f2f5f8;
+    line-height: 1.4;
+}
+@media (max-width: 650px) {
+    .cloud-panel {
+        left: 12px;
+        right: 12px;
+        width: auto;
+    }
+}

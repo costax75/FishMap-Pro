@@ -1401,6 +1401,357 @@ function addJournalEntry() {
 document.getElementById("journalOpen").onclick =
     openJournal;
 
+
+// -----------------------------------------------------
+// РЕЗЕРВНА КОПІЯ / ПЕРЕНЕСЕННЯ ДАНИХ
+// -----------------------------------------------------
+
+function collectFishMapData() {
+    return {
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        waters: waters,
+        points: points,
+        journal: journalEntries
+    };
+}
+
+function downloadBackup() {
+    const data = collectFishMapData();
+
+    const blob = new Blob(
+        [JSON.stringify(data, null, 2)],
+        { type: "application/json;charset=utf-8" }
+    );
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+
+    a.href = url;
+    a.download =
+        "FishMapPro_backup_" +
+        new Date().toISOString().slice(0, 10) +
+        ".json";
+
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    URL.revokeObjectURL(url);
+}
+
+function importBackup(file) {
+    if (!file) return;
+
+    const reader = new FileReader();
+
+    reader.onload = () => {
+        try {
+            const data = JSON.parse(reader.result);
+
+            if (
+                !data ||
+                !Array.isArray(data.waters) ||
+                !Array.isArray(data.points) ||
+                !Array.isArray(data.journal)
+            ) {
+                throw new Error("Це не резервна копія FishMap Pro.");
+            }
+
+            if (!confirm(
+                "Імпорт замінить поточні локальні дані. Продовжити?"
+            )) return;
+
+            waters = data.waters;
+            points = data.points;
+            journalEntries = data.journal;
+
+            saveWaters();
+            savePoints();
+            saveJournal();
+
+            renderWaters();
+            renderPoints();
+            drawRelief();
+
+            alert(
+                "Готово! Дані FishMap Pro відновлено."
+            );
+
+            document.getElementById("backupPanel")
+                .classList.add("hidden");
+
+        } catch (error) {
+            alert(
+                "Помилка імпорту: " + error.message
+            );
+        }
+    };
+
+    reader.readAsText(file);
+}
+
+function openBackupPanel() {
+    const panel = document.getElementById("backupPanel");
+
+    panel.innerHTML = `
+        <b>💾 Дані FishMap Pro</b>
+
+        <div class="backup-info">
+            Тут можна зробити резервну копію всіх
+            водойм, точок, промірів і журналу.
+            <br><br>
+            Файл можна перенести на інший телефон
+            і відновити дані там.
+        </div>
+
+        <button id="backupDownload">
+            ⬇️ Створити резервну копію
+        </button>
+
+        <input
+            id="backupFile"
+            type="file"
+            accept=".json,application/json"
+        >
+
+        <button id="backupClose">
+            Закрити
+        </button>
+    `;
+
+    panel.classList.remove("hidden");
+
+    document.getElementById("backupDownload").onclick =
+        downloadBackup;
+
+    document.getElementById("backupFile").onchange =
+        event => importBackup(event.target.files[0]);
+
+    document.getElementById("backupClose").onclick =
+        () => panel.classList.add("hidden");
+}
+
+document.getElementById("backupOpen").onclick =
+    openBackupPanel;
+
+
+// -----------------------------------------------------
+// ☁️ SUPABASE СИНХРОНІЗАЦІЯ
+// -----------------------------------------------------
+// Для роботи потрібні URL проєкту та anon key Supabase.
+// Дані зберігаються в таблиці fishmap_data.
+// Ця версія не містить жодних чужих ключів.
+
+const CLOUD_CONFIG_KEY = "fishmappro_cloud_config_v1";
+
+function getCloudConfig() {
+    try {
+        return JSON.parse(
+            localStorage.getItem(CLOUD_CONFIG_KEY) || "{}"
+        );
+    } catch {
+        return {};
+    }
+}
+
+function saveCloudConfig(config) {
+    localStorage.setItem(
+        CLOUD_CONFIG_KEY,
+        JSON.stringify(config)
+    );
+}
+
+function cloudHeaders(key) {
+    return {
+        "apikey": key,
+        "Authorization": "Bearer " + key,
+        "Content-Type": "application/json",
+        "Prefer": "return=representation"
+    };
+}
+
+async function cloudPush() {
+    const cfg = getCloudConfig();
+    if (!cfg.url || !cfg.key) {
+        throw new Error("Спочатку введи Supabase URL та anon key.");
+    }
+
+    const payload = {
+        device_id: getDeviceId(),
+        data: collectFishMapData(),
+        updated_at: new Date().toISOString()
+    };
+
+    const response = await fetch(
+        cfg.url.replace(/\/$/, "") +
+        "/rest/v1/fishmap_data?on_conflict=device_id",
+        {
+            method: "POST",
+            headers: {
+                ...cloudHeaders(cfg.key),
+                "Prefer": "resolution=merge-duplicates,return=representation"
+            },
+            body: JSON.stringify(payload)
+        }
+    );
+
+    if (!response.ok) {
+        throw new Error(
+            "Cloud push: HTTP " + response.status +
+            " — " + await response.text()
+        );
+    }
+}
+
+async function cloudPull() {
+    const cfg = getCloudConfig();
+    if (!cfg.url || !cfg.key) {
+        throw new Error("Спочатку введи Supabase URL та anon key.");
+    }
+
+    const response = await fetch(
+        cfg.url.replace(/\/$/, "") +
+        "/rest/v1/fishmap_data?device_id=eq." +
+        encodeURIComponent(getDeviceId()) +
+        "&select=data,updated_at",
+        {
+            method: "GET",
+            headers: cloudHeaders(cfg.key)
+        }
+    );
+
+    if (!response.ok) {
+        throw new Error(
+            "Cloud pull: HTTP " + response.status +
+            " — " + await response.text()
+        );
+    }
+
+    const rows = await response.json();
+
+    if (!rows.length) {
+        throw new Error(
+            "У хмарі ще немає даних для цього пристрою."
+        );
+    }
+
+    const data = rows[0].data;
+
+    if (
+        !data ||
+        !Array.isArray(data.waters) ||
+        !Array.isArray(data.points) ||
+        !Array.isArray(data.journal)
+    ) {
+        throw new Error("Хмарні дані мають неправильний формат.");
+    }
+
+    if (!confirm(
+        "Завантаження з хмари замінить локальні дані. Продовжити?"
+    )) return;
+
+    waters = data.waters;
+    points = data.points;
+    journalEntries = data.journal;
+
+    saveWaters();
+    savePoints();
+    saveJournal();
+
+    renderWaters();
+    renderPoints();
+    drawRelief();
+
+    alert("☁️ Дані завантажено.");
+}
+
+function getDeviceId() {
+    const key = "fishmappro_device_id";
+
+    let id = localStorage.getItem(key);
+
+    if (!id) {
+        id = "device_" +
+            Date.now().toString(36) + "_" +
+            Math.random().toString(36).slice(2);
+
+        localStorage.setItem(key, id);
+    }
+
+    return id;
+}
+
+function openCloudPanel() {
+    const panel = document.getElementById("cloudPanel");
+    const cfg = getCloudConfig();
+
+    panel.innerHTML = `
+        <b>☁️ Синхронізація FishMap Pro</b>
+
+        <div class="cloud-status">
+            Цей модуль підготовлений для справжньої
+            синхронізації через Supabase.
+            <br><br>
+            Дані одного й того самого акаунта/ідентифікатора
+            можна буде завантажувати на іншому пристрої.
+        </div>
+
+        <input id="cloudUrl"
+            placeholder="Supabase Project URL"
+            value="${escapeHtml(cfg.url || "")}">
+
+        <input id="cloudKey"
+            type="password"
+            placeholder="Supabase anon key"
+            value="${escapeHtml(cfg.key || "")}">
+
+        <button id="cloudSave">💾 Зберегти налаштування</button>
+        <button id="cloudPush">☁️ Відправити дані в хмару</button>
+        <button id="cloudPull">⬇️ Завантажити з хмари</button>
+
+        <div class="cloud-status">
+            ID цього пристрою:<br>
+            <small>${escapeHtml(getDeviceId())}</small>
+        </div>
+
+        <button id="cloudClose">Закрити</button>
+    `;
+
+    panel.classList.remove("hidden");
+
+    document.getElementById("cloudSave").onclick = () => {
+        saveCloudConfig({
+            url: document.getElementById("cloudUrl").value.trim(),
+            key: document.getElementById("cloudKey").value.trim()
+        });
+        alert("Налаштування збережено.");
+    };
+
+    document.getElementById("cloudPush").onclick = async () => {
+        try {
+            await cloudPush();
+            alert("☁️ Дані відправлено в хмару.");
+        } catch (e) {
+            alert("❌ " + e.message);
+        }
+    };
+
+    document.getElementById("cloudPull").onclick = async () => {
+        try {
+            await cloudPull();
+        } catch (e) {
+            alert("❌ " + e.message);
+        }
+    };
+
+    document.getElementById("cloudClose").onclick =
+        () => panel.classList.add("hidden");
+}
+
+document.getElementById("cloudOpen").onclick =
+    openCloudPanel;
+
 // -----------------------------------------------------
 // ДОПОМІЖНЕ
 // -----------------------------------------------------
