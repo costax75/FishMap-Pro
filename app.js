@@ -4,564 +4,488 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '&copy; OpenStreetMap'
 }).addTo(map);
 
-let addMode = false;
+
+// =====================================================
+// FISHMAP PRO — РЕЛЬЄФ ДНА
+// =====================================================
 
 const STORAGE_KEY = "fishmappro_points";
 
-// Максимальна відстань між промірами,
-// які програма буде з'єднувати
-const MAX_DISTANCE_METERS = 180;
-
-// Перепад, після якого вважаємо місце
-// потенційною бровкою
-const BROW_THRESHOLD = 1.0;
+let addMode = false;
+let points = [];
 
 
-// ======================================
+// =====================================================
+// ЗАВАНТАЖЕННЯ ТОЧОК
+// =====================================================
+
+function loadSavedPoints() {
+
+    const saved = localStorage.getItem(STORAGE_KEY);
+
+    if (!saved) {
+        points = [];
+        return;
+    }
+
+    try {
+        points = JSON.parse(saved);
+    } catch (e) {
+        console.error("Помилка даних:", e);
+        points = [];
+    }
+}
+
+
+// =====================================================
 // КОЛІР ГЛИБИНИ
-// ======================================
+// =====================================================
 
-function getDepthColor(depth) {
+function depthColor(depth) {
 
-    depth = Number(depth);
+    const stops = [
+        { d: 0,  r: 230, g: 40,  b: 30  },
+        { d: 2,  r: 255, g: 150, b: 20  },
+        { d: 4,  r: 255, g: 225, b: 50  },
+        { d: 6,  r: 70,  g: 190, b: 80  },
+        { d: 8,  r: 30,  g: 170, b: 180 },
+        { d: 10, r: 20,  g: 120, b: 220 },
+        { d: 15, r: 20,  g: 70,  b: 180 },
+        { d: 25, r: 10,  g: 35,  b: 120 }
+    ];
 
-    if (depth < 2) return "#ff0000";
-    if (depth < 3) return "#ff7a00";
-    if (depth < 4) return "#ffd000";
-    if (depth < 6) return "#00a83b";
+    if (depth <= stops[0].d) {
+        return `rgb(${stops[0].r},${stops[0].g},${stops[0].b})`;
+    }
 
-    return "#0066ff";
-}
+    for (let i = 0; i < stops.length - 1; i++) {
 
+        const a = stops[i];
+        const b = stops[i + 1];
 
-// ======================================
-// БЕЗПЕЧНИЙ ТЕКСТ
-// ======================================
+        if (depth >= a.d && depth <= b.d) {
 
-function safeText(value) {
+            const t =
+                (depth - a.d) /
+                (b.d - a.d);
 
-    return String(value ?? "")
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;");
-}
+            const r = Math.round(a.r + (b.r - a.r) * t);
+            const g = Math.round(a.g + (b.g - a.g) * t);
+            const bl = Math.round(a.b + (b.b - a.b) * t);
 
-
-// ======================================
-// ВІДСТАНЬ МІЖ ДВОМА ТОЧКАМИ
-// ======================================
-
-function distanceMeters(lat1, lon1, lat2, lon2) {
-
-    const R = 6371000;
-
-    const p1 = lat1 * Math.PI / 180;
-    const p2 = lat2 * Math.PI / 180;
-
-    const dp = (lat2 - lat1) * Math.PI / 180;
-    const dl = (lon2 - lon1) * Math.PI / 180;
-
-    const a =
-        Math.sin(dp / 2) * Math.sin(dp / 2) +
-        Math.cos(p1) *
-        Math.cos(p2) *
-        Math.sin(dl / 2) *
-        Math.sin(dl / 2);
-
-    const c = 2 * Math.atan2(
-        Math.sqrt(a),
-        Math.sqrt(1 - a)
-    );
-
-    return R * c;
-}
-
-
-// ======================================
-// ШАРИ КАРТИ
-// ======================================
-
-const depthLayer = L.layerGroup().addTo(map);
-
-const browLayer = L.layerGroup().addTo(map);
-
-
-// ======================================
-// СТВОРЕННЯ ТОЧКИ
-// ======================================
-
-function createMarker(point) {
-
-    const color = getDepthColor(point.depth);
-
-    const marker = L.circleMarker(
-        [point.lat, point.lng],
-        {
-            radius: 11,
-            color: "#ffffff",
-            weight: 3,
-            fillColor: color,
-            fillOpacity: 1
-        }
-    ).addTo(depthLayer);
-
-    const popup = `
-        <div style="min-width:220px">
-
-            <h3>🎣 FishMap Pro</h3>
-
-            <b>🌊 Глибина:</b>
-            ${safeText(point.depth)} м
-            <br>
-
-            <b>🪨 Дно:</b>
-            ${safeText(point.bottom)}
-            <br>
-
-            <b>🎣 Наживка:</b>
-            ${safeText(point.bait)}
-            <br>
-
-            <b>🐟 Риба:</b>
-            ${safeText(point.fish)}
-            <br>
-
-            <b>⭐ Оцінка:</b>
-            ${safeText(point.rating)}/5
-            <br>
-
-            <b>📍 Координати:</b>
-            ${Number(point.lat).toFixed(6)},
-            ${Number(point.lng).toFixed(6)}
-            <br>
-
-            <b>📝 Примітка:</b>
-            ${safeText(point.note)}
-
-        </div>
-    `;
-
-    marker.bindPopup(popup);
-}
-
-
-// ======================================
-// ПРОМАЛЬОВУВАННЯ БРОВОК
-// ======================================
-
-function drawBottomRelief(points) {
-
-    browLayer.clearLayers();
-
-    if (points.length < 2) return;
-
-
-    const connections = [];
-
-
-    // Знаходимо близькі проміри
-    for (let i = 0; i < points.length; i++) {
-
-        for (let j = i + 1; j < points.length; j++) {
-
-            const a = points[i];
-            const b = points[j];
-
-            const distance = distanceMeters(
-                a.lat,
-                a.lng,
-                b.lat,
-                b.lng
-            );
-
-            if (distance > MAX_DISTANCE_METERS) {
-                continue;
-            }
-
-
-            const depthA = Number(a.depth);
-            const depthB = Number(b.depth);
-
-            const difference = Math.abs(
-                depthA - depthB
-            );
-
-
-            connections.push({
-                a,
-                b,
-                distance,
-                difference
-            });
-
+            return `rgb(${r},${g},${bl})`;
         }
     }
 
-
-    // Малюємо перепади
-    connections.forEach(connection => {
-
-        const a = connection.a;
-        const b = connection.b;
-
-        const difference = connection.difference;
+    return "rgb(10,35,120)";
+}
 
 
-        // Невеликий перепад
-        if (difference < BROW_THRESHOLD) {
+// =====================================================
+// CANVAS ШАР
+// =====================================================
 
-            L.polyline(
-                [
-                    [a.lat, a.lng],
-                    [b.lat, b.lng]
-                ],
-                {
-                    color: "#777777",
-                    weight: 2,
-                    opacity: 0.45,
-                    dashArray: "5,7"
-                }
-            ).addTo(browLayer);
+const reliefCanvas = document.createElement("canvas");
 
-            return;
+reliefCanvas.style.position = "absolute";
+reliefCanvas.style.pointerEvents = "none";
+reliefCanvas.style.zIndex = "200";
+
+const ReliefLayer = L.Layer.extend({
+
+    onAdd: function(map) {
+
+        this._map = map;
+
+        const pane = map.getPane("overlayPane");
+
+        pane.appendChild(reliefCanvas);
+
+        map.on(
+            "move zoom resize",
+            this._reset,
+            this
+        );
+
+        this._reset();
+    },
+
+    onRemove: function(map) {
+
+        map.off(
+            "move zoom resize",
+            this._reset,
+            this
+        );
+
+        if (reliefCanvas.parentNode) {
+            reliefCanvas.parentNode.removeChild(reliefCanvas);
+        }
+    },
+
+    _reset: function() {
+
+        const size = this._map.getSize();
+
+        const topLeft =
+            this._map.containerPointToLayerPoint([0, 0]);
+
+        L.DomUtil.setPosition(
+            reliefCanvas,
+            topLeft
+        );
+
+        reliefCanvas.width = size.x;
+        reliefCanvas.height = size.y;
+
+        drawRelief();
+    }
+
+});
+
+const reliefLayer = new ReliefLayer();
+
+reliefLayer.addTo(map);
+
+
+// =====================================================
+// КОНВЕРТАЦІЯ КООРДИНАТ
+// =====================================================
+
+function pointToPixel(point) {
+
+    const p = map.latLngToContainerPoint([
+        Number(point.lat),
+        Number(point.lng)
+    ]);
+
+    return {
+        x: p.x,
+        y: p.y
+    };
+}
+
+
+// =====================================================
+// ІНТЕРПОЛЯЦІЯ ГЛИБИНИ
+// =====================================================
+
+function estimateDepth(x, y) {
+
+    if (points.length === 0) {
+        return null;
+    }
+
+    let numerator = 0;
+    let denominator = 0;
+
+    let nearest = null;
+    let nearestDistance = Infinity;
+
+    for (const point of points) {
+
+        const p = pointToPixel(point);
+
+        const dx = x - p.x;
+        const dy = y - p.y;
+
+        const distance =
+            Math.sqrt(dx * dx + dy * dy);
+
+        if (distance < nearestDistance) {
+
+            nearestDistance = distance;
+            nearest = Number(point.depth);
         }
 
+        // Якщо прямо біля проміру
+        if (distance < 8) {
+            return Number(point.depth);
+        }
 
-        // Сильний перепад — БРОВКА
-        const line = L.polyline(
-            [
-                [a.lat, a.lng],
-                [b.lat, b.lng]
-            ],
-            {
-                color: "#ff5500",
-                weight: 6,
-                opacity: 0.9
-            }
-        ).addTo(browLayer);
+        const weight =
+            1 / Math.pow(distance, 2);
+
+        numerator +=
+            Number(point.depth) * weight;
+
+        denominator += weight;
+    }
+
+    if (!denominator) {
+        return nearest;
+    }
+
+    return numerator / denominator;
+}
 
 
-        const midLat =
-            (a.lat + b.lat) / 2;
+// =====================================================
+// ОБМЕЖЕННЯ ОБЛАСТІ РЕЛЬЄФУ
+// =====================================================
 
-        const midLng =
-            (a.lng + b.lng) / 2;
+function getBounds() {
+
+    if (points.length < 2) {
+        return null;
+    }
+
+    const pixels =
+        points.map(pointToPixel);
+
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+
+    pixels.forEach(p => {
+
+        minX = Math.min(minX, p.x);
+        minY = Math.min(minY, p.y);
+
+        maxX = Math.max(maxX, p.x);
+        maxY = Math.max(maxY, p.y);
+
+    });
+
+    const padding = 120;
+
+    return {
+        minX: Math.max(0, minX - padding),
+        minY: Math.max(0, minY - padding),
+        maxX: Math.min(map.getSize().x, maxX + padding),
+        maxY: Math.min(map.getSize().y, maxY + padding)
+    };
+}
 
 
-        const shallow =
-            Math.min(
-                Number(a.depth),
-                Number(b.depth)
+// =====================================================
+// ПОБУДОВА КОЛЬОРОВОЇ КАРТИ
+// =====================================================
+
+function drawRelief() {
+
+    const canvas = reliefCanvas;
+    const ctx = canvas.getContext("2d");
+
+    ctx.clearRect(
+        0,
+        0,
+        canvas.width,
+        canvas.height
+    );
+
+    if (points.length < 3) {
+        return;
+    }
+
+    const bounds = getBounds();
+
+    if (!bounds) {
+        return;
+    }
+
+    const step = 14;
+
+    const width =
+        bounds.maxX - bounds.minX;
+
+    const height =
+        bounds.maxY - bounds.minY;
+
+
+    const values = [];
+
+    for (
+        let y = bounds.minY;
+        y <= bounds.maxY;
+        y += step
+    ) {
+
+        const row = [];
+
+        for (
+            let x = bounds.minX;
+            x <= bounds.maxX;
+            x += step
+        ) {
+
+            row.push(
+                estimateDepth(x, y)
             );
 
-        const deep =
-            Math.max(
-                Number(a.depth),
-                Number(b.depth)
+        }
+
+        values.push(row);
+    }
+
+
+    // -----------------------------------------------
+    // КОЛЬОРОВА ЗАЛИВКА
+    // -----------------------------------------------
+
+    for (let row = 0; row < values.length; row++) {
+
+        for (
+            let col = 0;
+            col < values[row].length;
+            col++
+        ) {
+
+            const depth = values[row][col];
+
+            if (depth === null) continue;
+
+            const color = depthColor(depth);
+
+            ctx.fillStyle = color;
+            ctx.globalAlpha = 0.32;
+
+            ctx.fillRect(
+                bounds.minX + col * step,
+                bounds.minY + row * step,
+                step + 1,
+                step + 1
             );
+        }
+    }
+
+    ctx.globalAlpha = 1;
 
 
-        const popup = `
-            <div>
+    // -----------------------------------------------
+    // ІЗОБАТИ
+    // -----------------------------------------------
 
-                <h3>🔥 БРОВКА</h3>
-
-                <b>Мілка сторона:</b>
-                ${shallow.toFixed(1)} м
-                <br>
-
-                <b>Глибока сторона:</b>
-                ${deep.toFixed(1)} м
-                <br>
-
-                <b>Перепад:</b>
-                ${difference.toFixed(1)} м
-                <br>
-
-                <b>Відстань:</b>
-                ${Math.round(connection.distance)} м
-
-            </div>
-        `;
+    const levels = [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        8,
+        10,
+        12,
+        15,
+        20
+    ];
 
 
-        line.bindPopup(popup);
+    levels.forEach(level => {
 
-
-        // Підпис у центрі бровки
-        L.marker(
-            [midLat, midLng],
-            {
-                icon: L.divIcon({
-                    className: "browka-label",
-
-                    html:
-                        `<div style="
-                            background:#ff5500;
-                            color:white;
-                            padding:4px 7px;
-                            border-radius:10px;
-                            font-weight:bold;
-                            font-size:12px;
-                            white-space:nowrap;
-                            box-shadow:0 2px 5px rgba(0,0,0,.35);
-                        ">
-                        🔥 БРОВКА
-                        </div>`,
-
-                    iconSize: [90, 25],
-                    iconAnchor: [45, 12]
-                }),
-
-                interactive: true
-
-            }
-        )
-        .bindPopup(popup)
-        .addTo(browLayer);
+        drawContourLevel(
+            ctx,
+            values,
+            bounds,
+            step,
+            level
+        );
 
     });
 
 }
 
 
-// ======================================
-// ЗАВАНТАЖЕННЯ ТОЧОК
-// ======================================
+// =====================================================
+// ІЗОБАТА — MARCHING SQUARES
+// =====================================================
 
-function loadPoints() {
+function drawContourLevel(
+    ctx,
+    values,
+    bounds,
+    step,
+    level
+) {
 
-    const saved =
-        localStorage.getItem(STORAGE_KEY);
+    const rows = values.length;
 
-    if (!saved) return;
+    if (rows < 2) return;
 
-    try {
+    const cols = values[0].length;
 
-        const points = JSON.parse(saved);
+    ctx.beginPath();
 
-        points.forEach(point => {
-            createMarker(point);
-        });
+    for (let row = 0; row < rows - 1; row++) {
 
-        // Малюємо рельєф
-        drawBottomRelief(points);
+        for (let col = 0; col < cols - 1; col++) {
 
-    } catch (error) {
+            const a = values[row][col];
+            const b = values[row][col + 1];
+            const c = values[row + 1][col + 1];
+            const d = values[row + 1][col];
 
-        console.error(
-            "Помилка завантаження:",
-            error
-        );
+            if (
+                a === null ||
+                b === null ||
+                c === null ||
+                d === null
+            ) {
+                continue;
+            }
 
-    }
-}
 
+            let code = 0;
 
-// ======================================
-// ЗБЕРЕЖЕННЯ
-// ======================================
+            if (a >= level) code |= 1;
+            if (b >= level) code |= 2;
+            if (c >= level) code |= 4;
+            if (d >= level) code |= 8;
 
-function savePoint(point) {
 
-    let points = [];
+            if (code === 0 || code === 15) {
+                continue;
+            }
 
-    const saved =
-        localStorage.getItem(STORAGE_KEY);
 
-    if (saved) {
+            const x =
+                bounds.minX + col * step;
 
-        try {
-            points = JSON.parse(saved);
-        } catch {
-            points = [];
-        }
+            const y =
+                bounds.minY + row * step;
 
-    }
 
-    points.push(point);
+            function interp(v1, v2) {
 
-    localStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify(points)
-    );
+                if (v1 === v2) return 0.5;
 
-    return points;
-}
+                return (
+                    (level - v1) /
+                    (v2 - v1)
+                );
+            }
 
 
-// ======================================
-// ДОДАТИ ТОЧКУ
-// ======================================
+            const top = {
+                x: x + step * interp(a, b),
+                y: y
+            };
 
-document.getElementById("addPoint").onclick = () => {
+            const right = {
+                x: x + step,
+                y: y + step * interp(b, c)
+            };
 
-    addMode = true;
+            const bottom = {
+                x: x + step * interp(d, c),
+                y: y + step
+            };
 
-    alert(
-        "🎯 Натисни на карту в місці проміру."
-    );
+            const left = {
+                x: x,
+                y: y + step * interp(a, d)
+            };
 
-};
 
+            function line(p1, p2) {
 
-// ======================================
-// НАТИСКАННЯ НА КАРТУ
-// ======================================
+                ctx.moveTo(p1.x, p1.y);
+                ctx.lineTo(p2.x, p2.y);
 
-map.on("click", function(e) {
+            }
 
-    if (!addMode) return;
 
+            switch (code) {
 
-    const depth = prompt(
-        "🌊 Глибина в метрах:",
-        "3.5"
-    );
-
-
-    if (depth === null) {
-
-        addMode = false;
-        return;
-
-    }
-
-
-    if (
-        depth.trim() === "" ||
-        isNaN(Number(depth))
-    ) {
-
-        alert("❌ Введи правильну глибину.");
-
-        addMode = false;
-        return;
-
-    }
-
-
-    const bottom = prompt(
-        "🪨 Тип дна:",
-        "мул"
-    );
-
-    if (bottom === null) {
-
-        addMode = false;
-        return;
-
-    }
-
-
-    const bait = prompt(
-        "🎣 Наживка:",
-        "попап"
-    );
-
-    if (bait === null) {
-
-        addMode = false;
-        return;
-
-    }
-
-
-    const fish = prompt(
-        "🐟 Яка риба:",
-        "короп"
-    );
-
-    if (fish === null) {
-
-        addMode = false;
-        return;
-
-    }
-
-
-    const rating = prompt(
-        "⭐ Оцінка 1–5:",
-        "5"
-    );
-
-    if (rating === null) {
-
-        addMode = false;
-        return;
-
-    }
-
-
-    const note = prompt(
-        "📝 Примітка:",
-        "Промір"
-    );
-
-    if (note === null) {
-
-        addMode = false;
-        return;
-
-    }
-
-
-    const point = {
-
-        id: Date.now(),
-
-        lat: e.latlng.lat,
-
-        lng: e.latlng.lng,
-
-        depth: Number(depth),
-
-        bottom: bottom,
-
-        bait: bait,
-
-        fish: fish,
-
-        rating: Math.min(
-            5,
-            Math.max(
-                1,
-                Number(rating) || 1
-            )
-        ),
-
-        note: note,
-
-        createdAt:
-            new Date().toISOString()
-
-    };
-
-
-    const points = savePoint(point);
-
-    createMarker(point);
-
-    // Перемальовуємо рельєф
-    drawBottomRelief(points);
-
-    addMode = false;
-
-
-    alert(
-        "✅ Промір збережено!\n\n" +
-        "Глибина: " +
-        point.depth +
-        " м"
-    );
-
-});
-
-
-// ======================================
-// ЗАПУСК
-// ======================================
-
-loadPoints();
+                case 
