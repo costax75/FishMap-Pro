@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FishMap Pro</title>
+
+    <link
+        rel="stylesheet"
+        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    >
+
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <div id="map"></div>
+
+    <div id="topbar">
+        <div class="brand">🎣 FishMap Pro</div>
+        <button id="addPoint">＋ Додати промір</button>
+        <button id="watersOpen">🗺️ Мої водойми</button>
+    </div>
+
+    <div id="watersPanel" class="panel hidden">
+        <div class="panel-head">
+            <b>🏞️ Мої водойми</b>
+            <button id="addWater">＋</button>
+        </div>
+        <div id="watersItems"></div>
+    </div>
+
+    <div id="waterCard" class="panel water-card"></div>
+
+    <div id="analysisCard" class="panel analysis-card hidden"></div>
+
+    <div id="reliefControl">
+        <button id="toggleRelief">📐 Бровки: ON</button>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
