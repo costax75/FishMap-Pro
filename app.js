@@ -486,6 +486,227 @@ function drawContourLevel(
             }
 
 
-            switch (code) {
+ switch (code) {
 
-                case 
+    case 1:
+    case 14:
+        line(left, top);
+        break;
+
+    case 2:
+    case 13:
+        line(top, right);
+        break;
+
+    case 3:
+    case 12:
+        line(left, right);
+        break;
+
+    case 4:
+    case 11:
+        line(right, bottom);
+        break;
+
+    case 5:
+        line(top, right);
+        line(left, bottom);
+        break;
+
+    case 6:
+    case 9:
+        line(top, bottom);
+        break;
+
+    case 7:
+    case 8:
+        line(left, bottom);
+        break;
+
+    case 10:
+        line(top, left);
+        line(right, bottom);
+        break;
+        }
+    }
+
+    // Малюємо ізобату
+    ctx.strokeStyle = "rgba(0, 60, 120, 0.65)";
+
+    // Кожні 2 метри робимо лінію товстішою
+    if (level % 2 === 0) {
+        ctx.lineWidth = 2.2;
+    } else {
+        ctx.lineWidth = 1;
+    }
+
+    ctx.stroke();
+}
+
+
+// =====================================================
+// ПОБУДОВА ТОЧОК ГЛИБИНИ
+// =====================================================
+
+function drawDepthPoints() {
+
+    document.querySelectorAll(".depth-label").forEach(el => el.remove());
+
+    points.forEach(point => {
+
+        const p = map.latLngToLayerPoint([
+            Number(point.lat),
+            Number(point.lng)
+        ]);
+
+        const label = document.createElement("div");
+
+        label.className = "depth-label";
+
+        label.innerHTML =
+            Number(point.depth).toFixed(1) + " м";
+
+        label.style.position = "absolute";
+        label.style.left = p.x + "px";
+        label.style.top = p.y + "px";
+        label.style.transform = "translate(-50%, -50%)";
+
+        label.style.background = depthColor(
+            Number(point.depth)
+        );
+
+        label.style.color = "white";
+        label.style.fontWeight = "bold";
+        label.style.fontSize = "12px";
+        label.style.padding = "3px 6px";
+        label.style.borderRadius = "10px";
+        label.style.border = "2px solid white";
+        label.style.boxShadow = "0 1px 4px rgba(0,0,0,.5)";
+        label.style.zIndex = "500";
+
+        map.getPanes().markerPane.appendChild(label);
+    });
+}
+
+
+// =====================================================
+// ДОДАВАННЯ ТОЧКИ
+// =====================================================
+
+document.getElementById("addPoint").onclick = () => {
+
+    addMode = true;
+
+    alert(
+        "Натисни на карту там, де зробив промір ехолотом."
+    );
+};
+
+
+// =====================================================
+// КЛІК ПО КАРТІ
+// =====================================================
+
+map.on("click", function(e) {
+
+    if (!addMode) return;
+
+    let depth = prompt(
+        "Введи глибину в метрах:",
+        "2.5"
+    );
+
+    if (depth === null) {
+        addMode = false;
+        return;
+    }
+
+    depth = parseFloat(depth);
+
+    if (isNaN(depth) || depth < 0) {
+
+        alert("Введи правильну глибину.");
+
+        return;
+    }
+
+    let bottom = prompt(
+        "Тип дна:",
+        "мул"
+    );
+
+    if (bottom === null) {
+        addMode = false;
+        return;
+    }
+
+    const newPoint = {
+
+        lat: e.latlng.lat,
+        lng: e.latlng.lng,
+
+        depth: depth,
+
+        bottom: bottom,
+
+        date: new Date().toISOString()
+    };
+
+    points.push(newPoint);
+
+    localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify(points)
+    );
+
+    addMode = false;
+
+    drawAll();
+
+    L.marker(e.latlng)
+        .addTo(map)
+        .bindPopup(
+            "<b>🎣 FishMap Pro</b><br><br>" +
+
+            "🌊 Глибина: " +
+            depth.toFixed(1) +
+            " м<br>" +
+
+            "🪨 Дно: " +
+            bottom
+        )
+        .openPopup();
+
+});
+
+
+// =====================================================
+// ОНОВЛЕННЯ ВСЬОГО РЕЛЬЄФУ
+// =====================================================
+
+function drawAll() {
+
+    drawRelief();
+
+    drawDepthPoints();
+}
+
+
+// =====================================================
+// ПЕРЕМАЛЬОВУВАННЯ ПРИ РУСІ КАРТИ
+// =====================================================
+
+map.on("moveend zoomend", function() {
+
+    drawAll();
+
+});
+
+
+// =====================================================
+// ЗАВАНТАЖЕННЯ
+// =====================================================
+
+loadSavedPoints();
+
+drawAll();
