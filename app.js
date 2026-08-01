@@ -5,18 +5,49 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 }).addTo(map);
 
 
-// ===============================
-// FishMap Pro — точки водойми
-// ===============================
+// ======================================
+// FishMap Pro — КАРТА ГЛИБИН
+// ======================================
 
 let addMode = false;
 
 const STORAGE_KEY = "fishmappro_points";
 
 
-// ---------- Безпечний текст ----------
+// ======================================
+// Визначення кольору за глибиною
+// ======================================
+
+function getDepthColor(depth) {
+
+    depth = Number(depth);
+
+    if (depth < 2) {
+        return "#ff0000"; // 🔴 мілко
+    }
+
+    if (depth < 3) {
+        return "#ff7a00"; // 🟠
+    }
+
+    if (depth < 4) {
+        return "#ffd000"; // 🟡
+    }
+
+    if (depth < 6) {
+        return "#00a83b"; // 🟢
+    }
+
+    return "#0066ff"; // 🔵 глибоко
+}
+
+
+// ======================================
+// Безпечний текст
+// ======================================
 
 function safeText(value) {
+
     return String(value ?? "")
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
@@ -26,63 +57,25 @@ function safeText(value) {
 }
 
 
-// ---------- Завантаження точок ----------
-
-function loadPoints() {
-
-    const saved = localStorage.getItem(STORAGE_KEY);
-
-    if (!saved) return;
-
-    try {
-
-        const points = JSON.parse(saved);
-
-        points.forEach(point => {
-            createMarker(point);
-        });
-
-    } catch (error) {
-
-        console.error("Помилка завантаження точок:", error);
-
-    }
-}
-
-
-// ---------- Збереження ----------
-
-function savePoint(point) {
-
-    let points = [];
-
-    const saved = localStorage.getItem(STORAGE_KEY);
-
-    if (saved) {
-        try {
-            points = JSON.parse(saved);
-        } catch {
-            points = [];
-        }
-    }
-
-    points.push(point);
-
-    localStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify(points)
-    );
-}
-
-
-// ---------- Створення маркера ----------
+// ======================================
+// Створення кольорової точки
+// ======================================
 
 function createMarker(point) {
 
-    const marker = L.marker([
-        point.lat,
-        point.lng
-    ]).addTo(map);
+    const color = getDepthColor(point.depth);
+
+    const marker = L.circleMarker(
+        [point.lat, point.lng],
+        {
+            radius: 11,
+            color: "#ffffff",
+            weight: 3,
+            fillColor: color,
+            fillOpacity: 1
+        }
+    ).addTo(map);
+
 
     const popup = `
         <div style="min-width:220px">
@@ -124,43 +117,116 @@ function createMarker(point) {
 }
 
 
-// ---------- Кнопка додавання ----------
+// ======================================
+// Завантаження точок
+// ======================================
+
+function loadPoints() {
+
+    const saved = localStorage.getItem(STORAGE_KEY);
+
+    if (!saved) return;
+
+    try {
+
+        const points = JSON.parse(saved);
+
+        points.forEach(point => {
+            createMarker(point);
+        });
+
+    } catch (error) {
+
+        console.error(
+            "Помилка завантаження точок:",
+            error
+        );
+
+    }
+}
+
+
+// ======================================
+// Збереження точки
+// ======================================
+
+function savePoint(point) {
+
+    let points = [];
+
+    const saved = localStorage.getItem(STORAGE_KEY);
+
+    if (saved) {
+
+        try {
+            points = JSON.parse(saved);
+        } catch {
+            points = [];
+        }
+
+    }
+
+    points.push(point);
+
+    localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify(points)
+    );
+}
+
+
+// ======================================
+// Кнопка "Додати точку"
+// ======================================
 
 document.getElementById("addPoint").onclick = () => {
 
     addMode = true;
 
     alert(
-        "🎯 Режим додавання точки увімкнено.\n\n" +
+        "🎯 Режим додавання точки\n\n" +
         "Натисни на карту в місці проміру."
     );
+
 };
 
 
-// ---------- Натискання карти ----------
+// ======================================
+// Натискання на карту
+// ======================================
 
 map.on("click", function(e) {
 
     if (!addMode) return;
+
 
     const depth = prompt(
         "🌊 Введи глибину в метрах:",
         "3.5"
     );
 
+
     if (depth === null) {
+
         addMode = false;
         return;
+
     }
 
 
-    if (depth.trim() === "" || isNaN(Number(depth))) {
+    if (
+        depth.trim() === "" ||
+        isNaN(Number(depth))
+    ) {
 
-        alert("Вкажи правильну глибину, наприклад 3.5");
+        alert(
+            "❌ Вкажи правильну глибину.\n" +
+            "Наприклад: 3.5"
+        );
 
         addMode = false;
-
         return;
+
     }
 
 
@@ -169,9 +235,12 @@ map.on("click", function(e) {
         "мул"
     );
 
+
     if (bottom === null) {
+
         addMode = false;
         return;
+
     }
 
 
@@ -180,9 +249,12 @@ map.on("click", function(e) {
         "попап"
     );
 
+
     if (bait === null) {
+
         addMode = false;
         return;
+
     }
 
 
@@ -191,20 +263,26 @@ map.on("click", function(e) {
         "короп"
     );
 
+
     if (fish === null) {
+
         addMode = false;
         return;
+
     }
 
 
     const rating = prompt(
-        "⭐ Оціни точку від 1 до 5:",
+        "⭐ Оцінка точки від 1 до 5:",
         "5"
     );
 
+
     if (rating === null) {
+
         addMode = false;
         return;
+
     }
 
 
@@ -213,9 +291,12 @@ map.on("click", function(e) {
         "Перспективна точка"
     );
 
+
     if (note === null) {
+
         addMode = false;
         return;
+
     }
 
 
@@ -259,13 +340,16 @@ map.on("click", function(e) {
 
     alert(
         "✅ Точку збережено!\n\n" +
-        "Глибина: " + point.depth + " м\n" +
-        "Дно: " + point.bottom
+        "Глибина: " +
+        point.depth +
+        " м"
     );
 
 });
 
 
-// ---------- Запуск ----------
+// ======================================
+// Запуск
+// ======================================
 
 loadPoints();
