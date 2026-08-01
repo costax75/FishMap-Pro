@@ -4,46 +4,38 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '&copy; OpenStreetMap'
 }).addTo(map);
 
-
-// ======================================
-// FishMap Pro — КАРТА ГЛИБИН
-// ======================================
-
 let addMode = false;
 
 const STORAGE_KEY = "fishmappro_points";
 
+// Максимальна відстань між промірами,
+// які програма буде з'єднувати
+const MAX_DISTANCE_METERS = 180;
+
+// Перепад, після якого вважаємо місце
+// потенційною бровкою
+const BROW_THRESHOLD = 1.0;
+
 
 // ======================================
-// Визначення кольору за глибиною
+// КОЛІР ГЛИБИНИ
 // ======================================
 
 function getDepthColor(depth) {
 
     depth = Number(depth);
 
-    if (depth < 2) {
-        return "#ff0000"; // 🔴 мілко
-    }
+    if (depth < 2) return "#ff0000";
+    if (depth < 3) return "#ff7a00";
+    if (depth < 4) return "#ffd000";
+    if (depth < 6) return "#00a83b";
 
-    if (depth < 3) {
-        return "#ff7a00"; // 🟠
-    }
-
-    if (depth < 4) {
-        return "#ffd000"; // 🟡
-    }
-
-    if (depth < 6) {
-        return "#00a83b"; // 🟢
-    }
-
-    return "#0066ff"; // 🔵 глибоко
+    return "#0066ff";
 }
 
 
 // ======================================
-// Безпечний текст
+// БЕЗПЕЧНИЙ ТЕКСТ
 // ======================================
 
 function safeText(value) {
@@ -58,7 +50,46 @@ function safeText(value) {
 
 
 // ======================================
-// Створення кольорової точки
+// ВІДСТАНЬ МІЖ ДВОМА ТОЧКАМИ
+// ======================================
+
+function distanceMeters(lat1, lon1, lat2, lon2) {
+
+    const R = 6371000;
+
+    const p1 = lat1 * Math.PI / 180;
+    const p2 = lat2 * Math.PI / 180;
+
+    const dp = (lat2 - lat1) * Math.PI / 180;
+    const dl = (lon2 - lon1) * Math.PI / 180;
+
+    const a =
+        Math.sin(dp / 2) * Math.sin(dp / 2) +
+        Math.cos(p1) *
+        Math.cos(p2) *
+        Math.sin(dl / 2) *
+        Math.sin(dl / 2);
+
+    const c = 2 * Math.atan2(
+        Math.sqrt(a),
+        Math.sqrt(1 - a)
+    );
+
+    return R * c;
+}
+
+
+// ======================================
+// ШАРИ КАРТИ
+// ======================================
+
+const depthLayer = L.layerGroup().addTo(map);
+
+const browLayer = L.layerGroup().addTo(map);
+
+
+// ======================================
+// СТВОРЕННЯ ТОЧКИ
 // ======================================
 
 function createMarker(point) {
@@ -74,8 +105,7 @@ function createMarker(point) {
             fillColor: color,
             fillOpacity: 1
         }
-    ).addTo(map);
-
+    ).addTo(depthLayer);
 
     const popup = `
         <div style="min-width:220px">
@@ -118,12 +148,193 @@ function createMarker(point) {
 
 
 // ======================================
-// Завантаження точок
+// ПРОМАЛЬОВУВАННЯ БРОВОК
+// ======================================
+
+function drawBottomRelief(points) {
+
+    browLayer.clearLayers();
+
+    if (points.length < 2) return;
+
+
+    const connections = [];
+
+
+    // Знаходимо близькі проміри
+    for (let i = 0; i < points.length; i++) {
+
+        for (let j = i + 1; j < points.length; j++) {
+
+            const a = points[i];
+            const b = points[j];
+
+            const distance = distanceMeters(
+                a.lat,
+                a.lng,
+                b.lat,
+                b.lng
+            );
+
+            if (distance > MAX_DISTANCE_METERS) {
+                continue;
+            }
+
+
+            const depthA = Number(a.depth);
+            const depthB = Number(b.depth);
+
+            const difference = Math.abs(
+                depthA - depthB
+            );
+
+
+            connections.push({
+                a,
+                b,
+                distance,
+                difference
+            });
+
+        }
+    }
+
+
+    // Малюємо перепади
+    connections.forEach(connection => {
+
+        const a = connection.a;
+        const b = connection.b;
+
+        const difference = connection.difference;
+
+
+        // Невеликий перепад
+        if (difference < BROW_THRESHOLD) {
+
+            L.polyline(
+                [
+                    [a.lat, a.lng],
+                    [b.lat, b.lng]
+                ],
+                {
+                    color: "#777777",
+                    weight: 2,
+                    opacity: 0.45,
+                    dashArray: "5,7"
+                }
+            ).addTo(browLayer);
+
+            return;
+        }
+
+
+        // Сильний перепад — БРОВКА
+        const line = L.polyline(
+            [
+                [a.lat, a.lng],
+                [b.lat, b.lng]
+            ],
+            {
+                color: "#ff5500",
+                weight: 6,
+                opacity: 0.9
+            }
+        ).addTo(browLayer);
+
+
+        const midLat =
+            (a.lat + b.lat) / 2;
+
+        const midLng =
+            (a.lng + b.lng) / 2;
+
+
+        const shallow =
+            Math.min(
+                Number(a.depth),
+                Number(b.depth)
+            );
+
+        const deep =
+            Math.max(
+                Number(a.depth),
+                Number(b.depth)
+            );
+
+
+        const popup = `
+            <div>
+
+                <h3>🔥 БРОВКА</h3>
+
+                <b>Мілка сторона:</b>
+                ${shallow.toFixed(1)} м
+                <br>
+
+                <b>Глибока сторона:</b>
+                ${deep.toFixed(1)} м
+                <br>
+
+                <b>Перепад:</b>
+                ${difference.toFixed(1)} м
+                <br>
+
+                <b>Відстань:</b>
+                ${Math.round(connection.distance)} м
+
+            </div>
+        `;
+
+
+        line.bindPopup(popup);
+
+
+        // Підпис у центрі бровки
+        L.marker(
+            [midLat, midLng],
+            {
+                icon: L.divIcon({
+                    className: "browka-label",
+
+                    html:
+                        `<div style="
+                            background:#ff5500;
+                            color:white;
+                            padding:4px 7px;
+                            border-radius:10px;
+                            font-weight:bold;
+                            font-size:12px;
+                            white-space:nowrap;
+                            box-shadow:0 2px 5px rgba(0,0,0,.35);
+                        ">
+                        🔥 БРОВКА
+                        </div>`,
+
+                    iconSize: [90, 25],
+                    iconAnchor: [45, 12]
+                }),
+
+                interactive: true
+
+            }
+        )
+        .bindPopup(popup)
+        .addTo(browLayer);
+
+    });
+
+}
+
+
+// ======================================
+// ЗАВАНТАЖЕННЯ ТОЧОК
 // ======================================
 
 function loadPoints() {
 
-    const saved = localStorage.getItem(STORAGE_KEY);
+    const saved =
+        localStorage.getItem(STORAGE_KEY);
 
     if (!saved) return;
 
@@ -135,10 +346,13 @@ function loadPoints() {
             createMarker(point);
         });
 
+        // Малюємо рельєф
+        drawBottomRelief(points);
+
     } catch (error) {
 
         console.error(
-            "Помилка завантаження точок:",
+            "Помилка завантаження:",
             error
         );
 
@@ -147,14 +361,15 @@ function loadPoints() {
 
 
 // ======================================
-// Збереження точки
+// ЗБЕРЕЖЕННЯ
 // ======================================
 
 function savePoint(point) {
 
     let points = [];
 
-    const saved = localStorage.getItem(STORAGE_KEY);
+    const saved =
+        localStorage.getItem(STORAGE_KEY);
 
     if (saved) {
 
@@ -172,11 +387,13 @@ function savePoint(point) {
         STORAGE_KEY,
         JSON.stringify(points)
     );
+
+    return points;
 }
 
 
 // ======================================
-// Кнопка "Додати точку"
+// ДОДАТИ ТОЧКУ
 // ======================================
 
 document.getElementById("addPoint").onclick = () => {
@@ -184,15 +401,14 @@ document.getElementById("addPoint").onclick = () => {
     addMode = true;
 
     alert(
-        "🎯 Режим додавання точки\n\n" +
-        "Натисни на карту в місці проміру."
+        "🎯 Натисни на карту в місці проміру."
     );
 
 };
 
 
 // ======================================
-// Натискання на карту
+// НАТИСКАННЯ НА КАРТУ
 // ======================================
 
 map.on("click", function(e) {
@@ -201,7 +417,7 @@ map.on("click", function(e) {
 
 
     const depth = prompt(
-        "🌊 Введи глибину в метрах:",
+        "🌊 Глибина в метрах:",
         "3.5"
     );
 
@@ -219,10 +435,7 @@ map.on("click", function(e) {
         isNaN(Number(depth))
     ) {
 
-        alert(
-            "❌ Вкажи правильну глибину.\n" +
-            "Наприклад: 3.5"
-        );
+        alert("❌ Введи правильну глибину.");
 
         addMode = false;
         return;
@@ -234,7 +447,6 @@ map.on("click", function(e) {
         "🪨 Тип дна:",
         "мул"
     );
-
 
     if (bottom === null) {
 
@@ -249,7 +461,6 @@ map.on("click", function(e) {
         "попап"
     );
 
-
     if (bait === null) {
 
         addMode = false;
@@ -263,7 +474,6 @@ map.on("click", function(e) {
         "короп"
     );
 
-
     if (fish === null) {
 
         addMode = false;
@@ -273,10 +483,9 @@ map.on("click", function(e) {
 
 
     const rating = prompt(
-        "⭐ Оцінка точки від 1 до 5:",
+        "⭐ Оцінка 1–5:",
         "5"
     );
-
 
     if (rating === null) {
 
@@ -288,9 +497,8 @@ map.on("click", function(e) {
 
     const note = prompt(
         "📝 Примітка:",
-        "Перспективна точка"
+        "Промір"
     );
-
 
     if (note === null) {
 
@@ -326,20 +534,24 @@ map.on("click", function(e) {
 
         note: note,
 
-        createdAt: new Date().toISOString()
+        createdAt:
+            new Date().toISOString()
 
     };
 
 
-    savePoint(point);
+    const points = savePoint(point);
 
     createMarker(point);
+
+    // Перемальовуємо рельєф
+    drawBottomRelief(points);
 
     addMode = false;
 
 
     alert(
-        "✅ Точку збережено!\n\n" +
+        "✅ Промір збережено!\n\n" +
         "Глибина: " +
         point.depth +
         " м"
@@ -349,7 +561,7 @@ map.on("click", function(e) {
 
 
 // ======================================
-// Запуск
+// ЗАПУСК
 // ======================================
 
 loadPoints();
