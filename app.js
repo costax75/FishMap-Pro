@@ -781,6 +781,168 @@ function showBestFlatPoints() {
 
 document.getElementById("findBest").onclick = showBestFlatPoints;
 
+
+// -----------------------------------------------------
+// ПІДБІР НАСАДКИ / ПРИКОРМКИ ПІД РИБУ
+// -----------------------------------------------------
+
+const fishProfiles = {
+    carp: {
+        name: "Короп",
+        baits: ["Кукурудза", "Волосяний монтаж + бойл", "Пелетс", "Поп-ап"],
+        popups: ["Солодкий жовтий", "Ананс", "Слива", "Крем"],
+        boilies: ["10–12 мм", "14–16 мм"],
+        feed: ["Пелетс 2–4 мм", "Мікс бойлів", "Кукурудза", "Флет-метод мікс"],
+        preferredDepth: [2, 8]
+    },
+    crucian: {
+        name: "Карась",
+        baits: ["Опариш", "Черв'як", "Кукурудза", "Міні-попап"],
+        popups: ["Ваніль", "Мед", "Кукурудза"],
+        boilies: ["8–10 мм"],
+        feed: ["Дрібний пелетс", "Мелений бойл", "Кукурудза", "Метод-мікс"],
+        preferredDepth: [1, 5]
+    },
+    silverCarp: {
+        name: "Товстолоб",
+        baits: ["Технопланктон", "Плаваюча насадка"],
+        popups: ["Яскравий поп-ап"],
+        boilies: ["8–10 мм як супровід"],
+        feed: ["Технопланктон", "Дрібна кормова суміш"],
+        preferredDepth: [1.5, 7]
+    },
+    roach: {
+        name: "Плотва",
+        baits: ["Опариш", "Черв'як", "Перловка", "Маленька кукурудза"],
+        popups: ["Міні-попап"],
+        boilies: ["6–8 мм"],
+        feed: ["Дрібний пелетс", "Сухарі", "Дрібна фракція"],
+        preferredDepth: [1, 6]
+    }
+};
+
+function makeFishPlan(fishKey, pointId) {
+    const fish = fishProfiles[fishKey];
+    const point = points.find(p => p.id === pointId);
+
+    if (!fish || !point) return null;
+
+    const depth = Number(point.depth);
+    const bottom = String(point.bottom || "").toLowerCase();
+
+    let score = 50;
+
+    if (
+        depth >= fish.preferredDepth[0] &&
+        depth <= fish.preferredDepth[1]
+    ) score += 25;
+
+    if (bottom.includes("мул")) score += 5;
+    if (bottom.includes("глина")) score += 4;
+    if (bottom.includes("череп")) score += 6;
+
+    const nearby = points
+        .filter(p => p.id !== point.id)
+        .map(p => ({
+            p,
+            d: map.distance(
+                [Number(point.lat), Number(point.lng)],
+                [Number(p.lat), Number(p.lng)]
+            )
+        }))
+        .filter(x => x.d <= 150);
+
+    if (nearby.some(x =>
+        Math.abs(Number(x.p.depth) - depth) >= 1
+    )) score += 10;
+
+    score = Math.max(0, Math.min(100, score));
+
+    let verdict =
+        score >= 80 ? "🔥 Дуже хороший варіант" :
+        score >= 65 ? "🎯 Перспективний варіант" :
+        score >= 50 ? "🟡 Можна пробувати" :
+        "⚠️ Не найкращий варіант";
+
+    return {
+        score,
+        verdict,
+        fish,
+        point,
+        bait: fish.baits[0],
+        popup: fish.popups[0],
+        boilie: fish.boilies[0],
+        feed: fish.feed[0]
+    };
+}
+
+function openFishPlan() {
+    const panel = document.getElementById("fishPlan");
+
+    panel.innerHTML = `
+        <b>🐟 Підбір насадки для конкретної точки</b>
+
+        <select id="fishSelect">
+            ${Object.entries(fishProfiles).map(([key, fish]) =>
+                `<option value="${key}">${fish.name}</option>`
+            ).join("")}
+        </select>
+
+        <select id="fishPointSelect">
+            ${
+                points.length
+                    ? points.map((p, i) =>
+                        `<option value="${p.id}">
+                            Точка ${i + 1} — ${Number(p.depth).toFixed(1)} м
+                        </option>`
+                    ).join("")
+                    : `<option value="">Немає промірів</option>`
+            }
+        </select>
+
+        <button id="makeFishPlan">🎣 Підібрати</button>
+
+        <div id="fishResult"></div>
+
+        <button id="closeFishPlan">Закрити</button>
+    `;
+
+    panel.classList.remove("hidden");
+
+    document.getElementById("makeFishPlan").onclick = () => {
+        const fishKey = document.getElementById("fishSelect").value;
+        const pointId = Number(document.getElementById("fishPointSelect").value);
+        const result = makeFishPlan(fishKey, pointId);
+        const box = document.getElementById("fishResult");
+
+        if (!result) {
+            box.innerHTML = `<div class="fish-result">Спочатку додай промір.</div>`;
+            return;
+        }
+
+        box.innerHTML = `
+            <div class="fish-result">
+                <b>${result.fish.name}</b><br>
+                Рейтинг: <b>${result.score}/100</b><br>
+                ${result.verdict}<br><br>
+
+                🌊 Глибина: ${Number(result.point.depth).toFixed(1)} м<br>
+                🪨 Дно: ${escapeHtml(result.point.bottom || "—")}<br><br>
+
+                🟡 Насадка: <b>${result.bait}</b><br>
+                🟠 Поп-ап: <b>${result.popup}</b><br>
+                🟤 Бойл: <b>${result.boilie}</b><br>
+                🥣 Корм: <b>${result.feed}</b>
+            </div>
+        `;
+    };
+
+    document.getElementById("closeFishPlan").onclick =
+        () => panel.classList.add("hidden");
+}
+
+document.getElementById("fishPlanOpen").onclick = openFishPlan;
+
 // -----------------------------------------------------
 // ДОПОМІЖНЕ
 // -----------------------------------------------------

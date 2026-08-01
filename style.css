@@ -253,3 +253,38 @@ html, body {
         top: 115px;
     }
 }
+
+.fish-plan {
+    right: 12px;
+    top: 135px;
+    width: 330px;
+    max-height: 70vh;
+    overflow-y: auto;
+}
+
+.fish-plan select,
+.fish-plan button {
+    width: 100%;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 9px;
+    margin-top: 8px;
+    background: white;
+}
+
+.fish-result {
+    margin-top: 10px;
+    padding: 10px;
+    border-radius: 9px;
+    background: #f2f5f8;
+    line-height: 1.5;
+}
+
+@media (max-width: 650px) {
+    .fish-plan {
+        left: 12px;
+        right: 12px;
+        width: auto;
+        top: 115px;
+    }
+}
